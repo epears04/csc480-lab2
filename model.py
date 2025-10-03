@@ -26,8 +26,15 @@ class Prey(Agent):
         self.model.grid.move_agent(self, new_position)
         
     def eat(self):
-        self.energy += 10
-
+        flower_neighbors = self.model.grid.get_cell_list_contents([self.pos])
+        flower_agents = [agent for agent in flower_neighbors if isinstance(agent, Flower)]
+        
+        if flower_agents:
+            flower_to_eat = random.choice(flower_agents)
+            self.model.grid.remove_agent(flower_to_eat)
+            flower_to_eat.remove()
+            self.energy += 10
+        
     def breed(self):
         if self.energy >= 200:
             self.energy -= 100
@@ -43,16 +50,18 @@ class Prey(Agent):
     def step(self):
         self.move()
         self.breed()
-        rand_num = random.randint(1,10)
-        if rand_num <= 5:
-            self.eat()
-        else:
+        self.eat()
+        rand_num = random.randint(1,2)
+        if rand_num == 1:
             self.run()
         self.energy -= 1
 
 class Predator(Agent):
+    num_predators = 0 
+
     def __init__(self, model):
         super().__init__(model)
+        Predator.num_predators += 1
         self.energy = 100
 
     def move(self):
@@ -88,10 +97,11 @@ class Predator(Agent):
             neighbors = self.model.grid.get_cell_list_contents([self.pos])
             predator_agents = [agent for agent in neighbors if isinstance(agent, Predator)]
 
-            if len(predator_agents) > 2:
+            if predator_agents and Predator.num_predators > 1:
                 predator_to_fight = random.choice(predator_agents)
                 self.model.grid.remove_agent(predator_to_fight)
                 predator_to_fight.remove()
+                Predator.num_predators -= 1
 
     def step(self):
         self.move()
@@ -121,21 +131,33 @@ class Flower(Agent):
             self.model.grid.remove_agent(self)
             self.remove()
 
+    def propagate(self):
+        if self.energy > 150:
+            self.energy -= 75
+            new_flower = Flower(self.model)
+            self.model.grid.place_agent(new_flower, PLACEHOLDER_POS)
+            self.model.grid.move_to_empty(new_flower)
+
     def step(self):
         rand_int = random.randint(1,2)
         if rand_int == 1:
             self.grow()
         else:
             self.wilt()
+        self.propagate()
 
 # the environment 
 class PreyPredatorModel(Model):
-    def __init__(self, height, width, prey_count, predator_count):
+    def __init__(self, height, width, prey_count, predator_count, flower_count):
         super().__init__()
         self.height = height
         self.width = width
         self.grid = MultiGrid(height, width, torus=True)
         self.running = True
+
+        if prey_count + predator_count + flower_count > height * width:
+            print("Too many agents for the environment")
+            return
 
         for i in range(prey_count):
             prey = Prey(self)
@@ -147,10 +169,15 @@ class PreyPredatorModel(Model):
             self.grid.place_agent(predator, PLACEHOLDER_POS)
             self.grid.move_to_empty(predator)           
 
+        for i in range(flower_count):
+            flower = Flower(self)
+            self.grid.place_agent(flower, PLACEHOLDER_POS)
+            self.grid.move_to_empty(flower)
+
     def step(self):
         self.agents.shuffle_do("step")
 
-model = PreyPredatorModel(height=10, width=10, prey_count=40, predator_count=1)
+model = PreyPredatorModel(height=10, width=10, prey_count=10, predator_count=1, flower_count = 10)
 
 for i in range(100):
     model.step()
@@ -158,4 +185,5 @@ for i in range(100):
     # Print population counts
     prey_count = sum(isinstance(agent, Prey) for agent in model.agents)
     predator_count = sum(isinstance(agent, Predator) for agent in model.agents)
-    print(f"Step {i}: Prey={prey_count}, Predators={predator_count}")
+    flower_count = sum(isinstance(agent, Flower) for agent in model.agents)
+    print(f"Step {i}: Prey={prey_count}, Predators={predator_count}, Flowers={flower_count}")
